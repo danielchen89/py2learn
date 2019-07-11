@@ -1,0 +1,104 @@
+#!/usr/bin/python
+# -*- coding: UTF-8 -*-
+import os, time, subprocess
+from time import strftime, localtime
+
+"""
+    每5分钟扫描一次主动查找错误日志
+    */5 * * * * /usr/bin/python /data/ops/scripts/getOutOfMemory.py >> /data/ops/logs/getOutOfMemory.log
+"""
+
+def mkdir(path):
+    # 去除首位空格
+    path = path.strip()
+    isExists = os.path.exists(path)
+    if not isExists:
+        os.makedirs(path)
+        print(path + '创建成功')
+        return True
+    else:
+        print(path + '目录已存在')
+        return False
+
+# 打印当前时间
+def printTime():
+    print('运行开始时间:' + strftime("%Y-%m-%d %H:%M:%S", localtime()))
+    return
+
+# 判断临时文件是否存在，如果存在，删除临时文件
+def if_exists_tmp_file(tmpfile):
+    if os.path.exists(tmpfile):
+       os.remove(tmpfile)
+
+def recent_5min_oom(logfilelists, tmptxt, keywords,keylog):
+
+    #先删除临时文件
+    if_exists_tmp_file(logfilelists)
+    if_exists_tmp_file(tmptxt)
+
+    cmd = 'find /data/logs -mmin -5 -name "*.log" |  grep -v oom.log'
+    sub = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    sub.wait()
+    LOG_FILES = sub.stdout.read().strip()
+
+    # 结果写入文件，写完记着关闭。
+    fp = open(logfilelists, "w+")
+    fp.write(LOG_FILES)
+    fp.close()
+
+    print("本次查找的日志如下：" + LOG_FILES)
+
+    """
+        打印关键字所在行的例子：
+        f = open("/data/logs/fi-accounting/accounting.log",'r')
+        lines = f.readlines()
+        for line in lines:
+           if '2019-07-11 16:33' in line:
+                print(line)
+    """
+    fp2 = open(logfilelists, "r")
+    logs = fp2.readlines()
+    for log in logs:
+        print("打印log名称:" + log)
+        for i in range(300, 0, -60):
+            # 打印5分钟内每一分钟时间戳
+            t = time.localtime(time.time() - i)
+            timestamp = strftime("%Y-%m-%d %H:%M", t)
+            print("时间戳如下：" + timestamp)
+            fp3 = open(log.strip(), "r")
+            logtexts = fp3.readlines()
+            for logtext in logtexts:
+                if timestamp in logtext:
+                    # print("文件输出行数："+str(len(logtext)))
+                    # 将最近5分钟数据追加写入文件
+                    fp4 = open(tmptxt, 'a+')
+                    fp4.write(logtext + '\n')
+                    fp4.close()
+            fp3.close()
+    fp2.close()
+
+
+    fp5 = open(tmptxt, 'r')
+    lines = fp5.readlines()
+    for line in lines:
+        if keywords in line:
+            fp6 = open(keylog, 'a+')
+            fp6.write(line + '\n')
+            fp6.close()
+    fp5.close()
+
+
+if __name__ == '__main__':
+    path_oom = "/data/ops/logs/oom/"
+    path_tmp = "/data/ops/tmp/"
+    logfilelists = "logfilelists"
+    tmptxt = "tmp.txt"
+    keywords = "ERROR"
+    printTime()
+    mkdir(path_oom)
+    mkdir(path_tmp)
+    #转为绝对路径
+    logfilelists = path_tmp + logfilelists
+    tmptxt = path_tmp + tmptxt
+    keylog = path_oom + "oom.log"
+    recent_5min_oom(logfilelists, tmptxt, keywords,keylog)
